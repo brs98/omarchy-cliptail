@@ -1,0 +1,21 @@
+[Unit]
+Description=Clip Bridge — clipboard endpoint for the tailnet
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/clipbridge
+EnvironmentFile=%h/.config/clipbridge/env
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+# wl-copy forks a resident process that owns the selection for as long as the
+# clipboard holds that value, and it lands in this unit's cgroup. The default
+# KillMode=control-group would kill it on every restart and silently wipe your
+# clipboard. KillMode=process stops only the daemon itself.
+KillMode=process
+
+[Install]
+WantedBy=graphical-session.target

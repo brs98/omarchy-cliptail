@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "you.clipbridge",
+  "name": "Clip Bridge",
+  "version": "1.0.0",
+  "author": "you",
+  "description": "Clipboard sync between this machine and your iPhone, over your tailnet.",
+  "kinds": ["service", "bar-widget"],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Clip Bridge",
+    "category": "System",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
