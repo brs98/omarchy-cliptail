@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "you.clipbridge",
-  "name": "Clip Bridge",
+  "id": "brs98.cliptail",
+  "name": "Cliptail",
   "version": "1.0.0",
-  "author": "you",
+  "author": "brs98",
   "description": "Clipboard sync between this machine and your iPhone, over your tailnet.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
@@ -11,7 +11,7 @@
     "barWidget": "Widget.qml"
   },
   "barWidget": {
-    "displayName": "Clip Bridge",
+    "displayName": "Cliptail",
     "category": "System",
     "defaultSection": "right",
     "allowMultiple": false

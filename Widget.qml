@@ -1,4 +1,4 @@
-// Clip Bridge bar widget.
+// Cliptail bar widget.
 //
 // Deliberately self-contained: it reads the daemon's status file directly
 // rather than importing the service singleton, so neither entry point can
@@ -25,7 +25,7 @@ Item {
     readonly property string statePath: {
         const base = Quickshell.env("XDG_STATE_HOME")
             || (Quickshell.env("HOME") + "/.local/state");
-        return base + "/clipbridge/status.json";
+        return base + "/cliptail/status.json";
     }
 
     FileView {
@@ -109,6 +109,6 @@ Item {
 
     Process {
         id: restart
-        command: ["systemctl", "--user", "restart", "clipbridge.service"]
+        command: ["systemctl", "--user", "restart", "cliptail.service"]
     }
 }

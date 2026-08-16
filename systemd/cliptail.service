@@ -1,12 +1,12 @@
 [Unit]
-Description=Clip Bridge — clipboard endpoint for the tailnet
+Description=Cliptail — clipboard endpoint for the tailnet
 After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/clipbridge
-EnvironmentFile=%h/.config/clipbridge/env
+ExecStart=%h/.local/bin/cliptail
+EnvironmentFile=%h/.config/cliptail/env
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

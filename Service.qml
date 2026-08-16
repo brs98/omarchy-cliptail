@@ -1,5 +1,5 @@
-// Clip Bridge service — headless. It owns none of the clipboard logic; that
-// lives in the clipbridge daemon under systemd. This just watches whether the
+// Cliptail service — headless. It owns none of the clipboard logic; that
+// lives in the cliptail daemon under systemd. This just watches whether the
 // daemon is alive and exposes IPC verbs so a Hyprland keybind can drive it.
 //
 // Not a Singleton: the shell loads service plugins with Qt.createComponent
@@ -48,7 +48,7 @@ Item {
 
     Process {
         id: restartProc
-        command: ["systemctl", "--user", "restart", "clipbridge.service"]
+        command: ["systemctl", "--user", "restart", "cliptail.service"]
         // `systemctl restart` returns before the daemon has rebound the port,
         // so probing immediately reads "down" and the widget stays wrong until
         // the next 30s poll. Give it a moment.
@@ -68,21 +68,21 @@ Item {
     }
 
     IpcHandler {
-        target: "clipbridge"
+        target: "cliptail"
 
-        // omarchy-shell clipbridge restart
+        // omarchy-shell cliptail restart
         function restart(): string {
             restartProc.running = true;
-            return "Restarting the clipbridge daemon.";
+            return "Restarting the cliptail daemon.";
         }
 
-        // omarchy-shell clipbridge clear
+        // omarchy-shell cliptail clear
         function clear(): string {
             clearProc.running = true;
             return "Clipboard cleared.";
         }
 
-        // omarchy-shell clipbridge status
+        // omarchy-shell cliptail status
         function status(): string {
             return root.daemonUp ? "up" : "down";
         }
