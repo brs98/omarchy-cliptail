@@ -167,5 +167,12 @@ there, and `omarchy plugin clone omarchy.clock` gives you a working one to diff
 against. `Style.font.family` is the likeliest thing to differ; the widget
 guards against it being undefined.
 
-Saving any file under `~/.config/omarchy/plugins/` hot-reloads it, so iterating
-is fast — no shell restart needed.
+Editing the QML does **not** hot-reload when the plugin is installed as a
+symlink, which is how `install.sh` installs it. Quickshell only watches its own
+config root (`/usr/share/omarchy/shell`), and `omarchy-shell shell rescanPlugins`
+re-reads the registry without clearing Qt's component cache — so the old QML
+keeps running and you debug a file the shell isn't executing. After a QML edit:
+
+```bash
+omarchy-restart-shell
+```

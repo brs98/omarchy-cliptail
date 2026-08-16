@@ -49,7 +49,17 @@ Item {
     Process {
         id: restartProc
         command: ["systemctl", "--user", "restart", "clipbridge.service"]
-        onExited: health.running = true
+        // `systemctl restart` returns before the daemon has rebound the port,
+        // so probing immediately reads "down" and the widget stays wrong until
+        // the next 30s poll. Give it a moment.
+        onExited: recheck.restart()
+    }
+
+    Timer {
+        id: recheck
+        interval: 1500
+        repeat: false
+        onTriggered: health.running = true
     }
 
     Process {

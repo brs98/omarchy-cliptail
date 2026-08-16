@@ -64,7 +64,14 @@ echo "  -> clipbridge.service is running"
 
 say "Exposing it to your tailnet"
 tailscale serve --bg "$PORT" >/dev/null
-HOSTNAME_TS="$(tailscale status --json | grep -o '"DNSName":"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$//')"
+
+# Ask for Self.DNSName directly. The obvious `grep -o '"DNSName":"..."' | head -1`
+# fails twice over: `tailscale status --json` pretty-prints, so there is a space
+# after the colon and the pattern never matches, and `head -1` closes the pipe
+# early, so grep dies of SIGPIPE and `set -o pipefail` aborts the whole install.
+HOSTNAME_TS="$(tailscale status --json --peers=false \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' \
+  2>/dev/null || true)"
 [[ -n "$HOSTNAME_TS" ]] || HOSTNAME_TS="<your-machine>.<tailnet>.ts.net"
 echo "  -> https://$HOSTNAME_TS/clip"
 
@@ -75,11 +82,15 @@ mkdir -p "$(dirname "$PLUGIN_DIR")"
 if [[ -e "$PLUGIN_DIR" && ! -L "$PLUGIN_DIR" ]]; then
   echo "  $PLUGIN_DIR already exists and is not a symlink. Leaving it alone."
 else
+  # Validate the source tree, not the link. The runtime is happy with a
+  # symlinked plugin folder (omarchy-plugin-remove knows how to unlink one),
+  # but omarchy-plugin-validate refuses to descend into a symlink.
+  omarchy plugin validate "$REPO" || die "The plugin manifest did not validate."
+
   ln -sfn "$REPO" "$PLUGIN_DIR"
 
   # Fail loudly here. A silently skipped enable leaves you with a working
   # daemon, no widget, and an installer that claimed success.
-  omarchy plugin validate "$PLUGIN_DIR" || die "The plugin manifest did not validate."
   omarchy plugin enable you.clipbridge || die "omarchy plugin enable failed."
   # 'omarchy bar put <id> [placement]' is the widget-placement verb; there is
   # no 'bar plugin add'. Placement is idempotent, so a re-run is harmless.
