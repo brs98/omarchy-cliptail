@@ -9,10 +9,14 @@
 //   accent    a clip moved in the last few seconds
 //   urgent    a secret is pending its self-clear, or the daemon is broken
 //
-// It reads the daemon's status.json directly and null-guards `service`, so if
-// the service entry point fails to load the widget degrades to sync history
-// instead of breaking. The daemon writes only a direction, a byte count and a
-// timestamp there — never clipboard contents.
+// Display-only: hover for detail, nothing to click. Restarting and clearing
+// live where they're discoverable — the IPC verbs and a keybind — rather than
+// behind an unlabelled icon whose two mouse buttons do different things.
+//
+// It reads the daemon's status.json directly and probes the daemon itself, so
+// it stands alone: if the service entry point fails to load, the widget still
+// works. The daemon writes only a direction, a byte count and a timestamp to
+// that file — never clipboard contents.
 
 import QtQuick
 import Quickshell
@@ -65,15 +69,6 @@ BarWidget {
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: health.running = true
-    }
-
-    // `systemctl restart` returns before the daemon rebinds, so re-probe on a
-    // delay after a click instead of immediately reading "stopped".
-    Timer {
-        id: recheck
-        interval: 1500
-        repeat: false
         onTriggered: health.running = true
     }
 
@@ -154,7 +149,8 @@ BarWidget {
             return "Cliptail daemon is not installed\n"
                  + "Run: ~/.config/omarchy/plugins/brs98.cliptail/install.sh";
         if (root.daemonState === "stopped")
-            return "Cliptail daemon is not running\nClick to restart";
+            return "Cliptail daemon is not running\n"
+                 + "Run: systemctl --user restart cliptail.service";
 
         var head;
         if (root.direction === "in")
@@ -164,7 +160,7 @@ BarWidget {
         else if (root.direction === "cleared")
             head = "Secret cleared";
         else
-            return "Cliptail — nothing synced yet\nClick to restart · middle-click to clear";
+            return "Cliptail — nothing synced yet";
 
         var line = head;
         if (root.wasSecret && root.direction !== "cleared")
@@ -173,7 +169,7 @@ BarWidget {
             line += "\n" + root.syncedBytes + " bytes · " + root.ago();
         else
             line += "\n" + root.ago();
-        return line + "\nClick to restart · middle-click to clear";
+        return line;
     }
 
     BarIconButton {
@@ -190,22 +186,12 @@ BarWidget {
         activeColor: root.broken || root.wasSecret ? Color.urgent : Color.accent
         tooltipText: root.tooltip()
 
-        onPressed: function (b) {
-            if (b === Qt.MiddleButton)
-                clearProc.running = true;
-            else
-                restartProc.running = true;
-        }
-    }
-
-    Process {
-        id: restartProc
-        command: ["systemctl", "--user", "restart", "cliptail.service"]
-        onExited: recheck.restart()
-    }
-
-    Process {
-        id: clearProc
-        command: ["wl-copy", "--clear"]
+        // Display-only: no click, no middle-click, no wheel. Note this is
+        // `pressable`, not `interactive` — WidgetButton gates its MouseArea on
+        // `interactive`, and a disabled MouseArea never emits onEntered, which
+        // would take the tooltip with it. `pressable: false` drops the click
+        // handler and reverts the cursor to an arrow, so it doesn't advertise
+        // an action it no longer has.
+        pressable: false
     }
 }

@@ -84,10 +84,16 @@ out. State is carried by colour, detail by the tooltip:
 | accent | a clip moved in the last 8 seconds — the "it worked" signal |
 | urgent | a secret is pending its self-clear, or the daemon is broken |
 
-Hover for the rest: direction, byte count, relative age, and what the daemon
-needs if it's unhappy (`stopped` says click to restart; `missing` names the
-`install.sh` path). **Left-click restarts the daemon, middle-click clears the
-clipboard.**
+Hover for the rest: direction, byte count, relative age, and the exact command
+to run if the daemon is unhappy.
+
+**The widget is display-only — there is nothing to click.** Restarting and
+clearing live where they're discoverable and labelled: the IPC verbs below, or a
+keybind. An unlabelled icon whose left and middle buttons do two different
+destructive-ish things is a worse home for them. Implementation note if you fork
+this: use `pressable: false`, not `interactive: false` — `WidgetButton` gates its
+`MouseArea` on `interactive`, and a disabled `MouseArea` never emits `onEntered`,
+so you'd lose the tooltip along with the click.
 
 An earlier version printed the relative age next to the glyph. Don't: the label
 changes width as it counts up, so every minute the whole bar shifted — and a
@@ -157,10 +163,11 @@ manager), `SUPER + C/V/X` (universal copy/paste/cut) and `SUPER + SHIFT + RETURN
 grep -rhoE '"SUPER \+ [^"]+"' ~/.config/hypr/*.lua /usr/share/omarchy/default/hypr/bindings/*.lua | sort -u
 ```
 
-A restart bind is usually unnecessary: clicking the bar widget restarts the
-daemon, which is the fix for the one failure mode you'll actually hit.
+Restarting is worth a bind if you want it on a key — the widget is display-only,
+so there's no click fallback. Restarting is also the fix for most things that go
+wrong, and the tooltip prints the command when the daemon is down.
 
-The service exposes four IPC verbs:
+The service exposes four IPC verbs, all usable from a bind or a shell:
 
 ```bash
 omarchy-shell cliptail status    # up | stopped | missing | unknown
