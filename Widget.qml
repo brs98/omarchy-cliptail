@@ -1,33 +1,95 @@
 // Cliptail bar widget.
 //
-// Deliberately self-contained: it reads the daemon's status file directly
-// rather than importing the service singleton, so neither entry point can
-// break the other. The daemon writes only a direction, a byte count and a
-// timestamp — never clipboard contents.
+// One fixed-width glyph, no text label. The earlier version printed a relative
+// age next to the icon, which meant the bar re-laid-out every time "9m" became
+// "10m", and it permanently displayed a fact you'd already acted on. Detail now
+// lives in the tooltip; the icon only carries state, through colour:
+//
+//   default   idle, daemon healthy
+//   accent    a clip moved in the last few seconds
+//   urgent    a secret is pending its self-clear, or the daemon is broken
+//
+// It reads the daemon's status.json directly and null-guards `service`, so if
+// the service entry point fails to load the widget degrades to sync history
+// instead of breaking. The daemon writes only a direction, a byte count and a
+// timestamp there — never clipboard contents.
 
 import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Ui
 
-Item {
+BarWidget {
     id: root
+    moduleName: "brs98.cliptail"
 
-    implicitWidth: row.implicitWidth
-    implicitHeight: Math.max(row.implicitHeight, Style.font.body)
+    // The widget probes the daemon itself rather than reading it off the service
+    // entry point. The shell only injects `service` into *panel* loaders
+    // (shell.qml, panelLoader.onLoaded); the bar widget path in
+    // plugins/bar/Bar.qml injects `settings` and nothing else, so a
+    // `property var service` here would sit null forever and every state would
+    // read as healthy. Probing also keeps the widget working when the service
+    // fails to load, which is the point of it being self-contained.
+    property int port: 8787
+    property string daemonState: "unknown"
+    readonly property bool broken: daemonState === "missing" || daemonState === "stopped"
 
-    // Injected by the shell when the matching service entry is loaded (see
-    // shell.qml: `if ("service" in item) item.service = shell.serviceFor(...)`).
-    // Always null-guard it: the widget must still render if the service failed
-    // to load, which is the whole reason it reads status.json directly below.
-    property var service: null
-    readonly property string daemonState: service ? service.daemonState : "unknown"
+    Process {
+        id: health
+        command: [
+            "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+            "--max-time", "2",
+            "http://127.0.0.1:" + root.port + "/health"
+        ]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (text.trim() === "200")
+                    root.daemonState = "up";
+                else
+                    probe.running = true;   // distinguish "stopped" from "missing"
+            }
+        }
+    }
+
+    Process {
+        id: probe
+        command: ["sh", "-c", "command -v cliptail"]
+        onExited: (exitCode) => {
+            root.daemonState = (exitCode === 0) ? "stopped" : "missing";
+        }
+    }
+
+    Timer {
+        interval: 30000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: health.running = true
+    }
+
+    // `systemctl restart` returns before the daemon rebinds, so re-probe on a
+    // delay after a click instead of immediately reading "stopped".
+    Timer {
+        id: recheck
+        interval: 1500
+        repeat: false
+        onTriggered: health.running = true
+    }
 
     property string direction: ""
     property int syncedAt: 0
     property int syncedBytes: 0
     property bool wasSecret: false
+
+    // Ticks once a minute purely so the tooltip's relative age doesn't go stale
+    // while hovering. The flash below is driven by a one-shot timer instead, so
+    // there's no per-second ticker anywhere.
     property int now: Math.floor(Date.now() / 1000)
+    property bool flashing: false
+
+    implicitWidth: button.implicitWidth
+    implicitHeight: button.implicitHeight
 
     readonly property string statePath: {
         const base = Quickshell.env("XDG_STATE_HOME")
@@ -43,17 +105,30 @@ Item {
         onLoaded: {
             try {
                 const s = JSON.parse(text());
+                const at = s.at || 0;
+                const isNew = at > root.syncedAt;
                 root.direction = s.direction || "";
-                root.syncedAt = s.at || 0;
+                root.syncedAt = at;
                 root.syncedBytes = s.bytes || 0;
                 root.wasSecret = s.secret === true;
+                if (isNew) {
+                    root.now = Math.floor(Date.now() / 1000);
+                    root.flashing = true;
+                    flash.restart();
+                }
             } catch (e) {
                 root.direction = "";
             }
         }
     }
 
-    // Re-render the relative time once a minute; nothing here polls the daemon.
+    Timer {
+        id: flash
+        interval: 8000
+        repeat: false
+        onTriggered: root.flashing = false
+    }
+
     Timer {
         interval: 60000
         running: true
@@ -61,76 +136,76 @@ Item {
         onTriggered: root.now = Math.floor(Date.now() / 1000)
     }
 
-    function glyph() {
-        // Daemon trouble outranks sync history: a stale ↓ from an hour ago is
-        // actively misleading when nothing can sync right now.
-        if (root.daemonState === "missing")
-            return "!";      // installed the plugin, never ran install.sh
-        if (root.daemonState === "stopped")
-            return "⚠";      // built, but the unit isn't running
-        if (root.direction === "in")
-            return "↓";      // phone -> laptop
-        if (root.direction === "out")
-            return "↑";      // laptop -> phone
-        if (root.direction === "cleared")
-            return "×";
-        return "·";
-    }
-
-    function label() {
-        if (root.daemonState === "missing")
-            return "setup";
-        if (root.daemonState === "stopped")
-            return "down";
-        return root.ago();
-    }
-
     function ago() {
         if (root.syncedAt <= 0)
             return "";
         const secs = Math.max(0, root.now - root.syncedAt);
         if (secs < 60)
-            return "now";
+            return "just now";
         if (secs < 3600)
-            return Math.floor(secs / 60) + "m";
+            return Math.floor(secs / 60) + "m ago";
         if (secs < 86400)
-            return Math.floor(secs / 3600) + "h";
-        return Math.floor(secs / 86400) + "d";
+            return Math.floor(secs / 3600) + "h ago";
+        return Math.floor(secs / 86400) + "d ago";
     }
 
-    Row {
-        id: row
-        anchors.centerIn: parent
-        spacing: Style.spacing.controlGap
+    function tooltip() {
+        if (root.daemonState === "missing")
+            return "Cliptail daemon is not installed\n"
+                 + "Run: ~/.config/omarchy/plugins/brs98.cliptail/install.sh";
+        if (root.daemonState === "stopped")
+            return "Cliptail daemon is not running\nClick to restart";
 
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.glyph()
-            color: (root.wasSecret || root.daemonState === "missing"
-                    || root.daemonState === "stopped") ? Color.urgent : Color.bar.text
-            font.family: Style.font.family !== undefined ? Style.font.family : undefined
-            font.pixelSize: Style.font.icon
-        }
+        var head;
+        if (root.direction === "in")
+            head = "Received from phone";
+        else if (root.direction === "out")
+            head = "Sent to phone";
+        else if (root.direction === "cleared")
+            head = "Secret cleared";
+        else
+            return "Cliptail — nothing synced yet\nClick to restart · middle-click to clear";
 
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.label()
-            visible: text.length > 0
-            color: Color.bar.text
-            opacity: 0.75
-            font.pixelSize: Style.font.caption
-        }
+        var line = head;
+        if (root.wasSecret && root.direction !== "cleared")
+            line += " (secret)";
+        if (root.direction !== "cleared")
+            line += "\n" + root.syncedBytes + " bytes · " + root.ago();
+        else
+            line += "\n" + root.ago();
+        return line + "\nClick to restart · middle-click to clear";
     }
 
-    MouseArea {
+    BarIconButton {
+        id: button
         anchors.fill: parent
-        acceptedButtons: Qt.LeftButton
-        cursorShape: Qt.PointingHandCursor
-        onClicked: restart.running = true
+        bar: root.bar
+
+        // Omarchy's own clipboard overlay uses this glyph, so it is known to
+        // exist in the bar font. That plugin is an overlay rather than a bar
+        // widget, so there's no icon collision on the bar itself.
+        text: "󰅌"
+
+        active: root.broken || root.flashing || root.wasSecret
+        activeColor: root.broken || root.wasSecret ? Color.urgent : Color.accent
+        tooltipText: root.tooltip()
+
+        onPressed: function (b) {
+            if (b === Qt.MiddleButton)
+                clearProc.running = true;
+            else
+                restartProc.running = true;
+        }
     }
 
     Process {
-        id: restart
+        id: restartProc
         command: ["systemctl", "--user", "restart", "cliptail.service"]
+        onExited: recheck.restart()
+    }
+
+    Process {
+        id: clearProc
+        command: ["wl-copy", "--clear"]
     }
 }
