@@ -15,12 +15,12 @@ here is built to make that one tap as cheap as possible.
 ## Layout
 
 ```
-manifest.json            plugin manifest (service + bar-widget)
-Service.qml              headless service: health check, IPC verbs
-Widget.qml               bar widget: last sync direction and age
-cmd/cliptail/main.go   the daemon — all clipboard and network logic
-systemd/                 user unit
-install.sh               builds, wires up systemd + tailscale serve, links the plugin
+manifest.json         plugin manifest (service + bar-widget)
+Service.qml           headless service: health check, notifications, IPC verbs
+Widget.qml            bar widget: one glyph, state by colour, detail on hover
+cmd/cliptail/main.go  the daemon — all clipboard and network logic
+systemd/              user unit
+install.sh            builds or downloads, wires up systemd + tailscale serve, links the plugin
 ```
 
 The split is deliberate. Plugins run as unsandboxed code inside the long-lived
@@ -168,11 +168,6 @@ omarchy-shell cliptail check     # force a health probe, don't wait out the 30s 
 omarchy-shell cliptail clear     # wl-copy --clear
 omarchy-shell cliptail restart   # systemctl --user restart cliptail.service
 ```
-
-The bar widget shows `↓` for an inbound clip, `↑` for outbound, `×` after a
-secret self-clears, plus how long ago. Clicking it restarts the daemon, which
-is the fix for the one failure mode you'll actually hit (see below). Secrets
-render in the theme's urgent color.
 
 ## Security model
 
