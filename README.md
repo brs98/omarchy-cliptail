@@ -56,7 +56,7 @@ toggles enabled state over IPC. So the widget alone will sit there reading
 "down" forever.
 
 You don't have to remember this: with the plugin enabled and no daemon, the bar
-widget shows a red `! setup` and you get a notification naming the exact command.
+widget glyph turns urgent red and you get a notification naming the exact command.
 
 Finish the job by running the installer from the cloned checkout:
 
@@ -75,13 +75,24 @@ mismatch. Install Go and re-run at any point to replace it with your own build.
 
 ### Bar widget states
 
-| Shown | Meaning |
-| ----- | ------- |
-| `↓ 2m` | last clip came from the phone, 2 minutes ago |
-| `↑ 5m` | last clip went to the phone |
-| `× 1m` | a secret self-cleared |
-| `⚠ down` | daemon installed but not running — click to restart |
-| `! setup` | daemon never installed — run `install.sh` |
+One clipboard glyph in a fixed slot — no text label, so the bar never re-lays
+out. State is carried by colour, detail by the tooltip:
+
+| Colour | Meaning |
+| ------ | ------- |
+| foreground | idle, daemon healthy |
+| accent | a clip moved in the last 8 seconds — the "it worked" signal |
+| urgent | a secret is pending its self-clear, or the daemon is broken |
+
+Hover for the rest: direction, byte count, relative age, and what the daemon
+needs if it's unhappy (`stopped` says click to restart; `missing` names the
+`install.sh` path). **Left-click restarts the daemon, middle-click clears the
+clipboard.**
+
+An earlier version printed the relative age next to the glyph. Don't: the label
+changes width as it counts up, so every minute the whole bar shifted — and a
+permanently-displayed "9m ago" is a fact you've already acted on. Omarchy's own
+indicators use `fixedWidth` plus `keepSpace` for exactly this reason.
 
 ## The API
 
