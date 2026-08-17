@@ -55,14 +55,33 @@ install hooks, or sudo; it only clones files, validates the manifest, and
 toggles enabled state over IPC. So the widget alone will sit there reading
 "down" forever.
 
+You don't have to remember this: with the plugin enabled and no daemon, the bar
+widget shows a red `! setup` and you get a notification naming the exact command.
+
 Finish the job by running the installer from the cloned checkout:
 
 ```bash
 ~/.config/omarchy/plugins/brs98.cliptail/install.sh
 ```
 
-It is idempotent and detects the already-linked plugin folder, so it will build
-the binary, wire up systemd and `tailscale serve`, and skip the linking step.
+It is idempotent — it detects the cloned plugin folder, skips the linking step,
+and still enables the plugin and places the widget.
+
+**Go is optional.** If Go is installed the daemon is built from source, which is
+what you want for something that can read your clipboard. If it isn't, the
+installer downloads the published binary for your architecture and verifies it
+against the `SHA256SUMS` from the same release, refusing to install on a
+mismatch. Install Go and re-run at any point to replace it with your own build.
+
+### Bar widget states
+
+| Shown | Meaning |
+| ----- | ------- |
+| `↓ 2m` | last clip came from the phone, 2 minutes ago |
+| `↑ 5m` | last clip went to the phone |
+| `× 1m` | a secret self-cleared |
+| `⚠ down` | daemon installed but not running — click to restart |
+| `! setup` | daemon never installed — run `install.sh` |
 
 ## The API
 
@@ -129,6 +148,15 @@ grep -rhoE '"SUPER \+ [^"]+"' ~/.config/hypr/*.lua /usr/share/omarchy/default/hy
 
 A restart bind is usually unnecessary: clicking the bar widget restarts the
 daemon, which is the fix for the one failure mode you'll actually hit.
+
+The service exposes four IPC verbs:
+
+```bash
+omarchy-shell cliptail status    # up | stopped | missing | unknown
+omarchy-shell cliptail check     # force a health probe, don't wait out the 30s poll
+omarchy-shell cliptail clear     # wl-copy --clear
+omarchy-shell cliptail restart   # systemctl --user restart cliptail.service
+```
 
 The bar widget shows `↓` for an inbound clip, `↑` for outbound, `×` after a
 secret self-clears, plus how long ago. Clicking it restarts the daemon, which
@@ -225,16 +253,26 @@ clipboard-paste=Shift+Insert Control+Shift+v XF86Paste
 shell does at load time, and `journalctl --user -u omarchy-shell` has the QML
 errors.
 
-## A caveat on the QML
+## Notes on the QML
 
-The daemon is tested. The two QML files are written against Quickshell's
-documented types (`Process`, `StdioCollector`, `FileView`, `IpcHandler`) and
-Omarchy's `qs.Commons` theme singletons (`Color`, `Style`), but Quattro is days
-old and tracks `quickshell-git`. If a property name has moved, the pattern to
-copy is in `$OMARCHY_PATH/shell/plugins/` — every first-party widget is right
-there, and `omarchy plugin clone omarchy.clock` gives you a working one to diff
-against. `Style.font.family` is the likeliest thing to differ; the widget
-guards against it being undefined.
+Both entry points run against Omarchy Quattro and are exercised end to end:
+service load, all four IPC verbs, and each daemon state. Two things that cost
+real debugging time, in case you fork this:
+
+**`Service.qml` must not be a `pragma Singleton`.** The shell loads service
+plugins with `Qt.createComponent` followed by `createObject` (`shell.qml`,
+`ensureService`), and a composite singleton is not creatable that way — you get
+a null instance and no IPC verbs. First-party services under
+`plugins/services/` are plain `Item`s for the same reason.
+
+**`Color.bar` exposes `background`, `text` and `active` — there is no
+`foreground`.** An undefined color binding renders without an obvious error.
+
+The widget declares `property var service`, which the shell populates with the
+matching service instance (`shell.qml`: `if ("service" in item) item.service =
+shell.serviceFor(...)`). It still reads `status.json` directly and null-guards
+`service`, so a service that fails to load degrades the widget rather than
+breaking it.
 
 Editing the QML does **not** hot-reload when the plugin is installed as a
 symlink, which is how `install.sh` installs it. Quickshell only watches its own

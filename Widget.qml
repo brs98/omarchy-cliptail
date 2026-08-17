@@ -16,6 +16,13 @@ Item {
     implicitWidth: row.implicitWidth
     implicitHeight: Math.max(row.implicitHeight, Style.font.body)
 
+    // Injected by the shell when the matching service entry is loaded (see
+    // shell.qml: `if ("service" in item) item.service = shell.serviceFor(...)`).
+    // Always null-guard it: the widget must still render if the service failed
+    // to load, which is the whole reason it reads status.json directly below.
+    property var service: null
+    readonly property string daemonState: service ? service.daemonState : "unknown"
+
     property string direction: ""
     property int syncedAt: 0
     property int syncedBytes: 0
@@ -55,6 +62,12 @@ Item {
     }
 
     function glyph() {
+        // Daemon trouble outranks sync history: a stale ↓ from an hour ago is
+        // actively misleading when nothing can sync right now.
+        if (root.daemonState === "missing")
+            return "!";      // installed the plugin, never ran install.sh
+        if (root.daemonState === "stopped")
+            return "⚠";      // built, but the unit isn't running
         if (root.direction === "in")
             return "↓";      // phone -> laptop
         if (root.direction === "out")
@@ -62,6 +75,14 @@ Item {
         if (root.direction === "cleared")
             return "×";
         return "·";
+    }
+
+    function label() {
+        if (root.daemonState === "missing")
+            return "setup";
+        if (root.daemonState === "stopped")
+            return "down";
+        return root.ago();
     }
 
     function ago() {
@@ -85,14 +106,15 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             text: root.glyph()
-            color: root.wasSecret ? Color.urgent : Color.bar.text
+            color: (root.wasSecret || root.daemonState === "missing"
+                    || root.daemonState === "stopped") ? Color.urgent : Color.bar.text
             font.family: Style.font.family !== undefined ? Style.font.family : undefined
             font.pixelSize: Style.font.icon
         }
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: root.ago()
+            text: root.label()
             visible: text.length > 0
             color: Color.bar.text
             opacity: 0.75

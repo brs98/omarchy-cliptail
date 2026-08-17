@@ -1,0 +1,39 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: |
+          # No cgo: the daemon shells out to wl-copy/wl-paste and links nothing,
+          # so a static binary runs on any glibc/musl the user happens to have.
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch \
+              go build -trimpath -ldflags="-s -w" \
+              -o "cliptail-linux-$arch" ./cmd/cliptail
+          done
+          sha256sum cliptail-linux-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cliptail-linux-amd64
+            cliptail-linux-arm64
+            SHA256SUMS
+          generate_release_notes: true

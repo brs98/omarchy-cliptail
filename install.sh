@@ -13,17 +13,50 @@ die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 
 # --- prerequisites -------------------------------------------------------
 
-command -v go >/dev/null || die "Go is not installed. Run: sudo pacman -S go"
 command -v wl-copy >/dev/null || die "wl-clipboard is not installed. Run: sudo pacman -S wl-clipboard"
 command -v tailscale >/dev/null || die "Tailscale is not installed. Run: sudo pacman -S tailscale"
 tailscale status >/dev/null 2>&1 || die "Tailscale is installed but not connected. Run: sudo tailscale up"
 
 # --- build ---------------------------------------------------------------
+#
+# Prefer building from source: this daemon can read your clipboard, so running
+# a binary you compiled yourself beats trusting one I uploaded. Omarchy doesn't
+# ship Go though, and `pacman -S go` for a 6MB daemon is a lot to ask, so fall
+# back to the published release — verified against the checksum in the same
+# release, and refused outright if they disagree.
 
-say "Building the daemon"
+REPO_SLUG="brs98/omarchy-cliptail"
 mkdir -p "$HOME/.local/bin"
-(cd "$REPO" && go build -trimpath -o "$BIN" ./cmd/cliptail)
-echo "  -> $BIN"
+
+if command -v go >/dev/null; then
+  say "Building the daemon from source"
+  (cd "$REPO" && go build -trimpath -o "$BIN" ./cmd/cliptail)
+  echo "  -> $BIN (built from source)"
+else
+  say "Go is not installed — fetching the published binary instead"
+  echo "  (install Go and re-run to build from source: sudo pacman -S go)"
+
+  case "$(uname -m)" in
+    x86_64)  ASSET="cliptail-linux-amd64" ;;
+    aarch64) ASSET="cliptail-linux-arm64" ;;
+    *) die "No published binary for $(uname -m). Install Go and re-run: sudo pacman -S go" ;;
+  esac
+
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  BASE="https://github.com/$REPO_SLUG/releases/latest/download"
+
+  curl -fsSL "$BASE/$ASSET" -o "$TMP/$ASSET" \
+    || die "Could not download $ASSET. Install Go and re-run: sudo pacman -S go"
+  curl -fsSL "$BASE/SHA256SUMS" -o "$TMP/SHA256SUMS" \
+    || die "Could not download SHA256SUMS. Refusing to install an unverified binary."
+
+  (cd "$TMP" && grep " $ASSET\$" SHA256SUMS | sha256sum -c --status -) \
+    || die "Checksum mismatch on $ASSET. Refusing to install it."
+
+  install -m 755 "$TMP/$ASSET" "$BIN"
+  echo "  -> $BIN (downloaded, checksum verified)"
+fi
 
 # --- token ---------------------------------------------------------------
 
