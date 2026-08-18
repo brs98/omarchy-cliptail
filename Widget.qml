@@ -39,6 +39,14 @@ BarWidget {
     property string daemonState: "unknown"
     readonly property bool broken: daemonState === "missing" || daemonState === "stopped"
 
+    // Same startup race the service entry point guards against, and this copy is
+    // the one you actually see: nothing orders quickshell's launch against
+    // cliptail's, so the first probe at login lands before the daemon binds and
+    // would paint the icon urgent-red for a daemon that is merely still starting.
+    // Confirm a failure across several probes before believing it.
+    property int failures: 0
+    readonly property int failuresBeforeDown: 3
+
     Process {
         id: health
         command: [
@@ -48,10 +56,13 @@ BarWidget {
         ]
         stdout: StdioCollector {
             onStreamFinished: {
-                if (text.trim() === "200")
+                if (text.trim() === "200") {
+                    root.failures = 0;
                     root.daemonState = "up";
-                else
+                } else {
+                    root.failures += 1;
                     probe.running = true;   // distinguish "stopped" from "missing"
+                }
             }
         }
     }
@@ -60,8 +71,21 @@ BarWidget {
         id: probe
         command: ["sh", "-c", "command -v cliptail"]
         onExited: (exitCode) => {
-            root.daemonState = (exitCode === 0) ? "stopped" : "missing";
+            // A missing binary is not a race — nothing will bind the port later.
+            if (exitCode !== 0)
+                root.daemonState = "missing";
+            else if (root.failures >= root.failuresBeforeDown)
+                root.daemonState = "stopped";
+            else
+                retryProbe.restart();   // still too early to call it
         }
+    }
+
+    Timer {
+        id: retryProbe
+        interval: 2000
+        repeat: false
+        onTriggered: health.running = true
     }
 
     Timer {

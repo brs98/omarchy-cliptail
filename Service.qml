@@ -29,6 +29,15 @@ Item {
     property bool binaryPresent: true
     property bool warned: false
 
+    // The first probe races the daemon's bind at login. quickshell is launched
+    // from Hyprland's exec-once and cliptail from graphical-session.target, and
+    // nothing orders the two, so at boot this probe reliably lands in the
+    // sub-second window before the daemon has bound its port. A single failure
+    // therefore means "asked too early", not "dead" — only a run of them is
+    // real. Without this the widget cried wolf on every cold boot.
+    property int failures: 0
+    readonly property int failuresBeforeDown: 3
+
     // --- health ---------------------------------------------------------
 
     Process {
@@ -42,9 +51,11 @@ Item {
             onStreamFinished: {
                 root.daemonUp = (text.trim() === "200");
                 if (root.daemonUp) {
+                    root.failures = 0;
                     root.daemonState = "up";
                     root.warned = false;
                 } else {
+                    root.failures += 1;
                     probe.running = true;
                 }
             }
@@ -60,12 +71,35 @@ Item {
         command: ["sh", "-c", "command -v cliptail"]
         onExited: (exitCode) => {
             root.binaryPresent = (exitCode === 0);
-            root.daemonState = root.binaryPresent ? "stopped" : "missing";
+
+            // A missing binary is not a race: nothing is going to bind the port
+            // later, so report that on the first probe exactly as before.
+            if (!root.binaryPresent) {
+                root.daemonState = "missing";
+            } else if (root.failures >= root.failuresBeforeDown) {
+                root.daemonState = "stopped";
+            } else {
+                // Still inside the grace window. Leave daemonState on its last
+                // honest reading and retry well before the 30s poll, so a real
+                // outage still surfaces quickly.
+                retryProbe.restart();
+                return;
+            }
+
             if (!root.warned) {
                 root.warned = true;
                 notify.running = true;
             }
         }
+    }
+
+    // Retry cadence while a failure is still unconfirmed. Three strikes at 2s
+    // reports a genuinely dead daemon ~6s in, still well inside the 30s poll.
+    Timer {
+        id: retryProbe
+        interval: 2000
+        repeat: false
+        onTriggered: health.running = true
     }
 
     Process {
@@ -116,6 +150,9 @@ Item {
 
         // omarchy-shell cliptail restart
         function restart(): string {
+            // A deliberate restart earns a fresh grace window; otherwise stale
+            // failures from the outage that prompted it fire the warning early.
+            root.failures = 0;
             restartProc.running = true;
             return "Restarting the cliptail daemon.";
         }
